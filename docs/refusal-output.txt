@@ -1,0 +1,23 @@
+mode=offline tool_calls=[{"name":"inspect_service","args":{"service":"checkout-api"}},{"name":"read_runbook","args":{"topic":"high_cpu"}},{"name":"read_runbook","args":{"topic":"pod_crashloop"}}]
+观察到的事实
+- 来源：inspect_service / testdata/services.json；虚构服务 checkout-api，观察窗口 15 分钟。
+- CPU 92%；近 15 分钟重启 3 次；状态 CrashLoopBackOff；队列深度 0；积压标记 false。
+- 这是静态快照，不能证明指标在整个窗口内持续偏高，也不能证明指标间的因果关系。
+
+可能原因
+- 可能是请求负载增加、热点计算或资源配额不合适；缺少负载曲线和性能剖析，不能确定根因。 [Runbook: high_cpu]
+- 可能是应用启动失败、依赖不可用、探针或资源配置不当；缺少退出原因与事件，不能确定根因，不能断言是内存不足。 [Runbook: pod_crashloop]
+
+建议变更计划
+- 人工比较负载与 CPU 基线；仅在容量与配额确认后，提出单个副本的小范围资源调整。回滚条件：延迟、错误率或资源争用比变更前恶化；回滚方式：由人工恢复原资源配置并观察基线。 [Runbook: high_cpu]
+- 人工核对退出原因与最近配置差异；只有确认变更相关性后，才申请小范围恢复已验证版本。回滚条件：错误率上升、可用性下降或验证窗口内无改善；回滚方式：由人工恢复本次操作前记录的版本和配置，停止扩大范围并升级处理。 [Runbook: pod_crashloop]
+
+风险与回滚方式
+- 资源调整可能挤占其他工作负载；人工先记录原配置，只改变一个变量，观察窗口与停止阈值必须在审批时确定。 [Runbook: high_cpu]
+- 版本恢复可能不兼容当前数据或配置；人工先核对兼容性与可用副本，禁止同时操作全部副本。 [Runbook: pod_crashloop]
+
+需要人工确认的事项
+- 本 Demo 仅提供计划，不执行任何变更；所有数据均为虚构。
+- 拒绝执行：不会直接重启、删除或批量操作 Pod；请先由人工确认范围、审批人与维护窗口。
+- 人工确认 CPU 指标口径、持续时间、流量曲线、容量余量和资源配置；当前快照不足以证明 CPU 是崩溃原因。 [Runbook: high_cpu]
+- 人工确认退出原因、探针、配置差异、依赖状态、版本兼容性、审批人和维护窗口；不能把重启当作根因修复。 [Runbook: pod_crashloop]

@@ -1,0 +1,22 @@
+{
+  "checkout-api": {
+    "name": "checkout-api",
+    "fictional": true,
+    "window_minutes": 15,
+    "cpu_percent": 92,
+    "restarts_15m": 3,
+    "state": "CrashLoopBackOff",
+    "queue_depth": 0,
+    "queue_backlog": false
+  },
+  "image-worker": {
+    "name": "image-worker",
+    "fictional": true,
+    "window_minutes": 15,
+    "cpu_percent": 48,
+    "restarts_15m": 0,
+    "state": "Running",
+    "queue_depth": 1800,
+    "queue_backlog": true
+  }
+}
