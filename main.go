@@ -36,7 +36,7 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	prompt := flags.String("prompt", defaultPrompt, "fictional scenario (one service per request)")
 	mode := flags.String("mode", "offline", "offline (no network), gemini, or qwen (explicit model API opt-in)")
 	modelName := flags.String("model", "", "Gemini model ID; required with -mode gemini")
-	trace := flags.Bool("trace", false, "print actual ADK tool calls to stderr")
+	trace := flags.Bool("trace", false, "print ADK tool calls and Qwen model timings to stderr")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -51,7 +51,7 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 	timeout := 60 * time.Second
 	if *mode == "qwen" {
-		timeout = 3 * time.Minute
+		timeout = qwenRunTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -59,7 +59,9 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if err != nil {
 		return err
 	}
-	result, err := runDemo(ctx, *prompt, llm)
+	start := time.Now()
+	result, err := runDemoWithOptions(ctx, *prompt, llm, demoOptions{finishWithEvidence: *mode == "qwen"})
+	elapsed := time.Since(start)
 	if err != nil {
 		// Provider errors can include request bodies and endpoint details.
 		switch *mode {
@@ -77,6 +79,11 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		}
 		if _, err := fmt.Fprintf(stderr, "mode=%s tool_calls=%s\n", *mode, data); err != nil {
 			return err
+		}
+		if *mode == "qwen" {
+			if _, err := fmt.Fprintf(stderr, "mode=qwen wall_ms=%d model_calls=%d model_ms=%v\n", elapsed.Milliseconds(), len(result.ModelDurations), milliseconds(result.ModelDurations)); err != nil {
+				return err
+			}
 		}
 	}
 	_, err = io.WriteString(stdout, result.Text)

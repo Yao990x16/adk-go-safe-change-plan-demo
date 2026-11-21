@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -16,7 +17,9 @@ func TestQwenToolRoundTrip(t *testing.T) {
 	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-Private-Header: unused-test-value")
 	t.Setenv("OPENAI_BASE_URL", "https://example.invalid/v1")
 	const name = "qwen-test"
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -93,14 +96,34 @@ func TestQwenToolRoundTrip(t *testing.T) {
 	t.Cleanup(server.Close)
 	t.Setenv("QWEN_BASE_URL", server.URL+"/v1")
 	t.Setenv("QWEN_MODEL", name)
-	var out, trace bytes.Buffer
-	if err := runCLI(context.Background(), []string{"-mode", "qwen", "-trace", "-prompt", "模拟服务 image-worker 队列积压，给处理方案"}, &out, &trace); err != nil {
+	const prompt = "模拟服务 image-worker 队列积压，给处理方案"
+	ctx := context.Background()
+	llm, err := configuredModel(ctx, "qwen", "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "队列深度 1800") || !strings.Contains(out.String(), "回滚条件") || strings.Contains(out.String(), "已经扩容") {
-		t.Fatalf("unexpected report: %s", out.String())
+	baseline, err := runDemo(ctx, prompt, llm)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if want := `mode=qwen tool_calls=[{"name":"inspect_service","args":{"service":"image-worker"}},{"name":"read_runbook","args":{"topic":"queue_backlog"}}]`; strings.TrimSpace(trace.String()) != want {
+	if count := requests.Swap(0); count != 3 || len(baseline.ModelDurations) != 3 {
+		t.Fatalf("baseline = %d HTTP requests, %d model timings, want 3 of each", count, len(baseline.ModelDurations))
+	}
+	if !strings.Contains(baseline.Text, "队列深度 1800") || !strings.Contains(baseline.Text, "回滚条件") || strings.Contains(baseline.Text, "已经扩容") {
+		t.Fatalf("unexpected baseline report: %s", baseline.Text)
+	}
+	var out, trace bytes.Buffer
+	if err := runCLI(ctx, []string{"-mode", "qwen", "-trace", "-prompt", prompt}, &out, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if count := requests.Load(); count != 2 {
+		t.Fatalf("optimized CLI sent %d HTTP requests, want 2", count)
+	}
+	if out.String() != baseline.Text {
+		t.Fatalf("optimized CLI changed the report: %s", out.String())
+	}
+	calls, metrics, _ := strings.Cut(trace.String(), "\n")
+	if want := `mode=qwen tool_calls=[{"name":"inspect_service","args":{"service":"image-worker"}},{"name":"read_runbook","args":{"topic":"queue_backlog"}}]`; calls != want || !strings.Contains(metrics, "model_calls=2 model_ms=[") {
 		t.Fatalf("unexpected trace: %s", trace.String())
 	}
 }

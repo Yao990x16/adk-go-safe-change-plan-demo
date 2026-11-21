@@ -152,11 +152,20 @@ QWEN_MODEL='your-qwen-model-id' \
 go run . -mode qwen -trace -prompt '模拟服务 checkout-api CPU 持续偏高，给一个处理方案'
 ```
 
-Qwen 模式适用于无需鉴权的模型服务。模型收到用户输入、两个工具的声明，以及当前会话中实际读取的虚构快照与 Runbook。请使用演示数据。客户端直连所配置的地址，拒绝重定向，并过滤 SDK 从环境继承的请求头。连接超时 5 秒，单次 HTTP 请求超时 90 秒，整轮受 CLI 的 3 分钟超时约束。
+Qwen 模式适用于无需鉴权的模型服务。模型收到用户输入、两个工具的声明，以及选择下一步时已收集的工具结果。请使用演示数据。客户端直连所配置的地址，拒绝重定向，并过滤 SDK 从环境继承的请求头。连接超时 5 秒，单次 HTTP 请求超时 90 秒，整轮受 CLI 的 3 分钟超时约束。
 
 ADK 的 Chat Completions 适配器处理工具调用和 `tool_call_id` 回传。请求使用 `tool_choice: auto`、`temperature: 0`、`max_tokens: 256`，并将 `chat_template_kwargs.enable_thinking` 设为 `false`。模型主要输出短工具调用，报告由本地 Go 程序根据证据生成。[ADK 适配器源码](https://github.com/google/adk-go/blob/v2.8.0/model/openaimodel/openaimodel.go)
 
-`go test -run TestQwen -v .` 使用本地 HTTP 模拟服务验证协议往返，可以在没有 Qwen 服务的机器上运行。
+成功检查服务并收齐所有必需 Runbook 后，ADK 回调直接结束采集，Go 继续校验并生成报告。`-trace` 在 stderr 显示工具轨迹、整轮耗时 `wall_ms`、模型调用次数 `model_calls` 和每次模型调用耗时 `model_ms`。
+
+`go test -run TestQwen -v .` 使用本地 HTTP 模拟服务验证协议往返。真实验收则需要在当前 shell 配置 `QWEN_BASE_URL`、`QWEN_MODEL`，再运行以下命令。
+
+```bash
+make eval-qwen            # 当前流程，证据齐全后在本地结束采集
+make eval-qwen-baseline   # 对照流程，保留证据齐全后的模型回复
+```
+
+两条命令按相同规则验收 CPU/CrashLoop 与队列积压场景。普通 `go test ./...` 会跳过真实请求。[验收结果与实现拆解](docs/qwen-evaluation.md)
 
 ### Gemini
 

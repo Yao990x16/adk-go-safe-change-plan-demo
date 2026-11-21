@@ -16,6 +16,8 @@ import (
 	"google.golang.org/adk/v2/model/openaimodel"
 )
 
+const qwenRunTimeout = 3 * time.Minute
+
 func newQwenModel(ctx context.Context, baseURL, name string) (model.LLM, error) {
 	base, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" ||

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
@@ -35,8 +37,24 @@ type ToolCall struct {
 }
 
 type DemoResult struct {
-	Text  string
-	Calls []ToolCall
+	Text           string
+	Calls          []ToolCall
+	ModelDurations []time.Duration
+}
+
+// Each run owns its model wrapper. It measures only calls to the underlying
+// adapter, excluding any responses supplied by an ADK callback.
+type measuredModel struct {
+	model.LLM
+	durations []time.Duration
+}
+
+func (m *measuredModel) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		start := time.Now()
+		defer func() { m.durations = append(m.durations, time.Since(start)) }()
+		m.LLM.GenerateContent(ctx, req, stream)(yield)
+	}
 }
 
 // evidence is per invocation, never shared between sessions. A mutex also makes
@@ -125,6 +143,25 @@ func (e *evidence) after(_ agent.Context, t tool.Tool, _, result map[string]any,
 	return nil, err
 }
 
+// finishWhenReady runs before requesting another model turn. Only completed
+// tool results count as evidence. The renderer still checks the report inputs.
+func (e *evidence) finishWhenReady(_ agent.Context, _ *model.LLMRequest) (*model.LLMResponse, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.violation != nil || e.inspection == nil || e.inspection.Status != "ok" || e.inspection.Service == nil {
+		return nil, nil
+	}
+	for _, topic := range requiredTopics(e.inspection.Service) {
+		if book, ok := e.books[topic]; !ok || book.Status != "ok" || book.Topic != topic {
+			return nil, nil
+		}
+	}
+	return &model.LLMResponse{
+		Content:      genai.NewContentFromText("只读采集完成", genai.RoleModel),
+		TurnComplete: true,
+	}, nil
+}
+
 func contains(values []string, target string) bool {
 	for _, v := range values {
 		if v == target {
@@ -151,7 +188,15 @@ func requiredTopics(s *Service) []string {
 	return topics
 }
 
+type demoOptions struct {
+	finishWithEvidence bool
+}
+
 func runDemo(ctx context.Context, prompt string, llm model.LLM) (DemoResult, error) {
+	return runDemoWithOptions(ctx, prompt, llm, demoOptions{})
+}
+
+func runDemoWithOptions(ctx context.Context, prompt string, llm model.LLM, opts demoOptions) (DemoResult, error) {
 	if strings.TrimSpace(prompt) == "" || len(prompt) > 4096 {
 		return DemoResult{}, errors.New("prompt must contain 1–4096 bytes")
 	}
@@ -164,12 +209,17 @@ func runDemo(ctx context.Context, prompt string, llm model.LLM) (DemoResult, err
 	if err != nil {
 		return DemoResult{}, err
 	}
-	a, err := llmagent.New(llmagent.Config{
+	measured := &measuredModel{LLM: llm}
+	cfg := llmagent.Config{
 		Name: "safe_change_planner", Description: "Read-only fictional operations planning demo",
-		Model: llm, Instruction: instruction, Tools: tools,
+		Model: measured, Instruction: instruction, Tools: tools,
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{e.before},
 		AfterToolCallbacks:  []llmagent.AfterToolCallback{e.after},
-	})
+	}
+	if opts.finishWithEvidence {
+		cfg.BeforeModelCallbacks = []llmagent.BeforeModelCallback{e.finishWhenReady}
+	}
+	a, err := llmagent.New(cfg)
 	if err != nil {
 		return DemoResult{}, err
 	}
@@ -204,5 +254,13 @@ func runDemo(ctx context.Context, prompt string, llm model.LLM) (DemoResult, err
 	if err != nil {
 		return DemoResult{}, err
 	}
-	return DemoResult{Text: text, Calls: e.calls}, nil
+	return DemoResult{Text: text, Calls: e.calls, ModelDurations: measured.durations}, nil
+}
+
+func milliseconds(durations []time.Duration) []int64 {
+	values := make([]int64, len(durations))
+	for i, duration := range durations {
+		values[i] = duration.Milliseconds()
+	}
+	return values
 }

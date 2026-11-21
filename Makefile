@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: demo test eval vet fmt check race build record
+.PHONY: demo test eval eval-qwen eval-qwen-baseline vet fmt check race build record
 
 demo:
 	$(GO) run . -trace
@@ -10,6 +10,12 @@ test:
 
 eval:
 	$(GO) test -run '^TestToolSelection$$' -v ./...
+
+eval-qwen:
+	$(GO) test -count=1 -run '^TestQwenLive$$' -v . -args -qwen-live
+
+eval-qwen-baseline:
+	$(GO) test -count=1 -run '^TestQwenLive$$' -v . -args -qwen-live -qwen-baseline
 
 vet:
 	$(GO) vet ./...
