@@ -34,7 +34,7 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	flags := flag.NewFlagSet("safe-change-plan", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	prompt := flags.String("prompt", defaultPrompt, "fictional scenario (one service per request)")
-	mode := flags.String("mode", "offline", "offline (no network) or gemini (explicit external API opt-in)")
+	mode := flags.String("mode", "offline", "offline (no network), gemini, or qwen (explicit model API opt-in)")
 	modelName := flags.String("model", "", "Gemini model ID; required with -mode gemini")
 	trace := flags.Bool("trace", false, "print actual ADK tool calls to stderr")
 	if err := flags.Parse(args); err != nil {
@@ -49,7 +49,11 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if strings.TrimSpace(*prompt) == "" || len(*prompt) > 4096 {
 		return errors.New("prompt must contain 1–4096 bytes")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	timeout := 60 * time.Second
+	if *mode == "qwen" {
+		timeout = 3 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	llm, err := configuredModel(ctx, *mode, *modelName)
 	if err != nil {
@@ -57,10 +61,12 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 	result, err := runDemo(ctx, *prompt, llm)
 	if err != nil {
-		// SDK errors can contain request bodies or endpoint details. Never log
-		// remote errors or the prompt in the credential-enabled mode.
-		if *mode == "gemini" {
+		// Provider errors can include request bodies and endpoint details.
+		switch *mode {
+		case "gemini":
 			return errors.New("Gemini run failed or evidence policy rejected the response; no report generated")
+		case "qwen":
+			return qwenRunError(err)
 		}
 		return err
 	}
@@ -84,6 +90,11 @@ func configuredModel(ctx context.Context, mode, name string) (model.LLM, error) 
 			return nil, errors.New("-model is only valid with -mode gemini")
 		}
 		return offlineModel{}, nil
+	case "qwen":
+		if name != "" {
+			return nil, errors.New("use QWEN_MODEL for -mode qwen; -model is only valid with -mode gemini")
+		}
+		return newQwenModel(ctx, os.Getenv("QWEN_BASE_URL"), os.Getenv("QWEN_MODEL"))
 	case "gemini":
 		if !regexp.MustCompile(`^gemini-[a-z0-9.-]+$`).MatchString(name) {
 			return nil, errors.New("-mode gemini requires a Gemini model ID via -model")
@@ -107,6 +118,6 @@ func configuredModel(ctx context.Context, mode, name string) (model.LLM, error) 
 		}
 		return llm, nil
 	default:
-		return nil, errors.New("-mode must be offline or gemini")
+		return nil, errors.New("-mode must be offline, gemini or qwen")
 	}
 }

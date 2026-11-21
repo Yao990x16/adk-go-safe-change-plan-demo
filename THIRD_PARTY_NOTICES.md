@@ -1,8 +1,8 @@
 # Third-party notices
 
 The project source is Apache-2.0. The table below records the root licenses of
-all 34 external modules used by `go list -deps .` on Linux/amd64 with Go 1.27.2
-on 2026-11-19. These licenses permit use in this Apache-2.0 demo, subject to
+all 40 external modules used by `go list -deps .` on Linux/amd64 with Go 1.27.2
+on 2026-11-21. These licenses permit use in this Apache-2.0 demo, subject to
 retaining their copyright, license and notice terms. They do not relicense the dependencies.
 
 The corresponding root LICENSE/NOTICE texts are preserved in
@@ -19,6 +19,7 @@ binary distribution if you change dependencies, build targets or redistribute bi
 | `cloud.google.com/go/auth` | `v0.24.1` | Apache-2.0 |
 | `cloud.google.com/go/compute/metadata` | `v0.10.0` | Apache-2.0 |
 | `github.com/cespare/xxhash/v2` | `v2.3.0` | MIT |
+| `github.com/coder/websocket` | `v1.8.15` | ISC |
 | `github.com/felixge/httpsnoop` | `v1.1.0` | MIT |
 | `github.com/go-logr/logr` | `v1.4.4` | Apache-2.0 |
 | `github.com/go-logr/stdr` | `v1.2.2` | Apache-2.0 |
@@ -30,6 +31,11 @@ binary distribution if you change dependencies, build targets or redistribute bi
 | `github.com/googleapis/enterprise-certificate-proxy` | `v0.3.24` | Apache-2.0 |
 | `github.com/googleapis/gax-go/v2` | `v2.27.0` | BSD-3-Clause |
 | `github.com/gorilla/websocket` | `v1.5.3` | BSD-2-Clause |
+| `github.com/openai/openai-go/v3` | `v3.91.1` | Apache-2.0 |
+| `github.com/tidwall/gjson` | `v1.19.0` | MIT |
+| `github.com/tidwall/match` | `v1.2.0` | MIT |
+| `github.com/tidwall/pretty` | `v1.2.1` | MIT |
+| `github.com/tidwall/sjson` | `v1.2.5` | MIT |
 | `go.opentelemetry.io/auto/sdk` | `v1.2.1` | Apache-2.0 |
 | `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | `v0.70.0` | Apache-2.0 |
 | `go.opentelemetry.io/otel` | `v1.47.0` | Apache-2.0 |

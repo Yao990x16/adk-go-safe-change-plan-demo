@@ -2,7 +2,7 @@
 
 一个只读的「安全运维计划 Agent」：用户描述虚构服务问题，Agent 读取本地状态与通用 Runbook，输出事实、判断、计划、回滚与人工确认事项。
 
-默认离线、无需凭据。真实使用 **Google ADK Go v2.8.0** 的 `llmagent`、`functiontool`、内存会话和 `Runner`；默认模型是确定性 Go 适配器，**不做大模型推理**。可选 Gemini 模式由真实模型选择工具，最终报告同样由程序根据已验证的工具证据生成。两种模式均不执行运维操作。
+默认离线、无需凭据。项目使用 **Google ADK Go v2.8.0** 的 `llmagent`、`functiontool`、内存会话和 `Runner`。离线模式由 Go 规则选择工具，可选的 Gemini 和 Qwen 模式由真实模型选择工具。所有模式均由程序根据已验证的工具证据生成只读报告。
 
 ## 快速复现
 
@@ -30,7 +30,7 @@ make record    # 重新保存 CPU 场景与拒绝执行场景的实际输出
 ```mermaid
 flowchart TD
     U[用户输入：一个虚构服务] --> R[ADK Runner / 内存会话]
-    R --> M[默认离线适配器 / 可选 Gemini]
+    R --> M[默认离线适配器 / 可选 Gemini 或 Qwen]
     M --> G[本地工具策略检查]
     G --> I[inspect_service：内嵌 services.json]
     I --> B[read_runbook：内嵌白名单 Markdown]
@@ -47,15 +47,15 @@ flowchart TD
 
 `//go:embed` 将数据固定在编译产物中；工具只读常量路径。名称和 topic 均由白名单校验，用户不能控制路径，也不能利用符号链接读取仓库外文件。工具函数本身无需网络、操作系统命令、真实账户或客户端配置。
 
-应用策略同时约束两个模式：
+应用策略适用于所有模式：
 
 - 一次只允许一个明确的目标服务；缺少服务名、多个候选服务或输入含路径时要求人工确认。
 - 必须先完成目标服务检查，才能读相应 Runbook；未知服务不会替换成默认服务。
 - 只允许读取返回状态对应的 topic；拒绝换查其他服务、重复调用和额外工具参数。
 - CPU `>=85`、状态 `CrashLoopBackOff`、积压标记为真分别选择三份 Runbook。这些是虚构演示路由规则，CPU 数值表示模拟使用率，不是生产告警阈值。
-- 每次最多 6 次模型调用、4 次工具调用，CLI 总超时 60 秒。证据缺失、调用越界或模型出错时失败退出，不生成成功报告。
+- 每次最多 6 次模型调用、4 次工具调用。CLI 总超时默认 60 秒，Qwen 模式为 3 分钟。证据缺失、调用越界或模型出错时失败退出，不生成成功报告。
 - 最终输出不展示用户原文或模型自由生成文本；只使用工具证据与经过审阅的内嵌 Runbook，每个变更建议均包含回滚条件和回滚方式。
-- 直接重启、删除或执行操作的请求会得到拒绝执行说明，并转成计划或人工确认清单。没有 shell、SSH、Kubernetes 写工具或公司系统连接。
+- 直接重启、删除或执行操作的请求会得到拒绝执行说明，并转成计划或人工确认清单。工具访问范围限于编译时嵌入的虚构资料。
 
 最终结构固定为：
 
@@ -142,6 +142,24 @@ mode=offline tool_calls=[{"name":"inspect_service","args":{"service":"checkout-a
 
 ## 可选真实模型接入
 
+### Qwen（Chat Completions）
+
+显式指定 `-mode qwen` 后，Agent 会向 `QWEN_BASE_URL` 下的 `/chat/completions` 发起请求。地址需以 `/v1` 结尾，`QWEN_MODEL` 填服务的 `/v1/models` 返回的完整模型 ID。以下是示例配置，请替换为实际地址和模型 ID：
+
+```bash
+QWEN_BASE_URL='http://127.0.0.1:8000/v1' \
+QWEN_MODEL='your-qwen-model-id' \
+go run . -mode qwen -trace -prompt '模拟服务 checkout-api CPU 持续偏高，给一个处理方案'
+```
+
+Qwen 模式适用于无需鉴权的模型服务。模型收到用户输入、两个工具的声明，以及当前会话中实际读取的虚构快照与 Runbook。请使用演示数据。客户端直连所配置的地址，拒绝重定向，并过滤 SDK 从环境继承的请求头。连接超时 5 秒，单次 HTTP 请求超时 90 秒，整轮受 CLI 的 3 分钟超时约束。
+
+ADK 的 Chat Completions 适配器处理工具调用和 `tool_call_id` 回传。请求使用 `tool_choice: auto`、`temperature: 0`、`max_tokens: 256`，并将 `chat_template_kwargs.enable_thinking` 设为 `false`。模型主要输出短工具调用，报告由本地 Go 程序根据证据生成。[ADK 适配器源码](https://github.com/google/adk-go/blob/v2.8.0/model/openaimodel/openaimodel.go)
+
+`go test -run TestQwen -v .` 使用本地 HTTP 模拟服务验证协议往返，可以在没有 Qwen 服务的机器上运行。
+
+### Gemini
+
 只有显式指定 `-mode gemini` 才启用 ADK 的 Gemini 模型适配器；需要自行提供 `GEMINI_API_KEY` 与可用模型 ID。仓库没有凭据文件，也不自动加载 `.env`。默认离线模式即使环境中已有凭据也不会使用它们。
 
 **启用后，原始用户输入、虚构快照和 Runbook 会发送到 Google Gemini 公网 API，可能产生费用。请只使用本仓库的虚构内容。** 此模式固定 Gemini 官方 API 端点、禁用环境 HTTP 代理、不跟随重定向，不连接公司系统。不可在需要企业代理的环境直接使用此示例配置。
@@ -183,7 +201,8 @@ unset GEMINI_API_KEY
 ## 目录
 
 ```text
-main.go / main_test.go       CLI、离线默认与可选 Gemini 配置
+main.go / main_test.go       CLI、离线默认与模型选择
+qwen.go / qwen_test.go       Qwen 模型配置与 Chat Completions 协议测试
 agent.go / agent_test.go     ADK Agent、运行器、证据策略与验收
 offline_model.go             确定性本地模型协议适配器
 report.go                    根据工具证据生成五段计划
@@ -212,7 +231,7 @@ git grep -nEi '公司名|客户名|内网|token|password|secret|api.?key'
 
 预期命中包括这里的检查命令、凭据变量名、忽略规则和测试中的假凭据字符串；应逐条确认没有真实值。不要把个人模型输入、真实 API 响应、终端历史、截图或私有配置保存为演示资料。应用不会自动推送、发帖或创建 PR。
 
-代码采用 Apache-2.0；依赖保留各自的 Apache、MIT、BSD 条款，详见 [依赖许可清单](THIRD_PARTY_NOTICES.md)。
+代码采用 Apache-2.0。依赖许可包括 Apache-2.0、MIT、BSD 和 ISC，详见 [依赖许可清单](THIRD_PARTY_NOTICES.md)。
 
 这是教学与评审样例，**不是生产变更执行器**。它没有真实监控、因果诊断、审批系统、变更执行能力或生产安全保证。任何现实变更均需在独立流程中人工核实和审批。
 

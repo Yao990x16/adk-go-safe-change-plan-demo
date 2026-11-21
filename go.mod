@@ -3,6 +3,7 @@ module example.com/adk-go-safe-change-plan-demo
 go 1.26.10
 
 require (
+	github.com/openai/openai-go/v3 v3.91.1
 	google.golang.org/adk/v2 v2.8.0
 	google.golang.org/genai v1.77.0
 )
@@ -12,6 +13,7 @@ require (
 	cloud.google.com/go/auth v0.24.1 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -23,6 +25,10 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.24 // indirect
 	github.com/googleapis/gax-go/v2 v2.27.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.2.0 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
